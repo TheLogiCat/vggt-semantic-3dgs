@@ -1,0 +1,47 @@
+# configs/semantic_default.yaml
+#
+# Default configuration for VGGTSemantic.
+# Load with PyYAML or OmegaConf:
+#
+#   import yaml
+#   cfg = yaml.safe_load(open("configs/semantic_default.yaml"))
+#
+# Or with OmegaConf:
+#   from omegaconf import OmegaConf
+#   cfg = OmegaConf.load("configs/semantic_default.yaml")
+
+model:
+  # ---- base VGGT geometry settings ----
+  img_size: 518          # expected square input resolution (pixels)
+  patch_size: 14         # DINOv2 / ViT-L patch size
+  embed_dim: 1024        # transformer embedding dimension
+
+  # ---- geometry head switches ----
+  enable_camera: true    # predict camera pose (extrinsic + intrinsic)
+  enable_depth: true     # predict depth maps
+  enable_point: true     # predict 3D point maps
+  enable_track: false    # predict 2D point tracks (slow; off by default)
+
+  # ---- semantic extension (Modules 1 / 2 / 3) ----
+  semantic:
+    enabled: true        # master switch; false → pure VGGT, no overhead
+
+    dim: 32              # semantic feature dimension (fixed at 32 per spec)
+
+    # Backbone for semantic tokenizer (Module 1)
+    # "dinov2"      → frozen DINOv2-ViT-L/14 via HuggingFace transformers
+    # "placeholder" → lightweight conv stub (for tests / offline use)
+    backbone: dinov2
+
+    guidance:
+      # Module 2 switch: semantic-guided attention modulation
+      # false → aggregator uses standard attention (ablation baseline)
+      enabled: true
+
+# ---- training defaults (not used by VGGTSemantic directly) ----
+training:
+  lr: 1.0e-4
+  lr_semantic: 1.0e-3   # higher LR for semantic projection head
+  batch_size: 4
+  warmup_steps: 500
+  freeze_backbone: true  # freeze patch-embed & DINOv2 during initial training
