@@ -51,7 +51,7 @@ integration points are:
 """
 
 import logging
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, Iterator, Set
 
 import torch
 import torch.nn as nn
@@ -370,21 +370,49 @@ class VGGTSemantic(nn.Module):
             for p in self.sem_tokenizer.backbone.parameters():
                 p.requires_grad_(False)
 
-    def semantic_parameters(self):
-        """Iterator over parameters that belong to the semantic extension."""
-        modules = []
+    def _iter_sem_log_scale_params(self) -> Iterator[nn.Parameter]:
+        """Yield semantic guidance log-scale parameters from guided attention blocks."""
+        seen: Set[int] = set()
+        for module in self.aggregator.modules():
+            sem_log_scale = getattr(module, "sem_log_scale", None)
+            if isinstance(sem_log_scale, nn.Parameter) and id(sem_log_scale) not in seen:
+                seen.add(id(sem_log_scale))
+                yield sem_log_scale
+
+    def freeze_base_and_enable_semantic_controller(self, train_sem_head: bool = True) -> None:
+        """
+        Freeze all base-network params and enable only semantic-controller params.
+
+        Trainable parameters after calling this method:
+            1) SemanticTokenizer projection MLP + LayerNorm (`sem_tokenizer.proj`)
+            2) Semantic guidance scale `sem_log_scale` (alpha in attention bias)
+            3) Optional semantic output head (`sem_head`) when train_sem_head=True
+        """
+        for p in self.parameters():
+            p.requires_grad_(False)
+
         if self.sem_tokenizer is not None:
-            modules.append(self.sem_tokenizer.proj)  # only the projection MLP
-        if self.sem_head is not None:
-            modules.append(self.sem_head)
-        # semantic guidance scale/head-weight parameters inside aggregator blocks
-        if hasattr(self.aggregator, "frame_blocks"):
-            for blk in self.aggregator.frame_blocks:
-                if hasattr(blk, "attn") and hasattr(blk.attn, "sem_log_scale"):
-                    yield blk.attn.sem_log_scale
-                    yield blk.attn.sem_head_weight
-        for m in modules:
-            yield from m.parameters()
+            for p in self.sem_tokenizer.proj.parameters():
+                p.requires_grad_(True)
+
+        for p in self._iter_sem_log_scale_params():
+            p.requires_grad_(True)
+
+        if train_sem_head and self.sem_head is not None:
+            for p in self.sem_head.parameters():
+                p.requires_grad_(True)
+
+    def semantic_controller_parameters(self, train_sem_head: bool = True) -> Iterator[nn.Parameter]:
+        """Iterator over semantic-controller parameters used for fine-tuning."""
+        if self.sem_tokenizer is not None:
+            yield from self.sem_tokenizer.proj.parameters()
+        yield from self._iter_sem_log_scale_params()
+        if train_sem_head and self.sem_head is not None:
+            yield from self.sem_head.parameters()
+
+    def semantic_parameters(self, train_sem_head: bool = True):
+        """Backward-compatible alias for semantic_controller_parameters()."""
+        yield from self.semantic_controller_parameters(train_sem_head=train_sem_head)
 
 
 # Convenience import alias

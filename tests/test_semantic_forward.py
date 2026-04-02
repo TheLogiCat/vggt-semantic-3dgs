@@ -390,3 +390,59 @@ class TestVGGTSemantic:
             out = model(imgs)
         assert "depth" in out
         assert "sem_feat" in out
+
+    def test_freeze_base_and_enable_semantic_controller(self):
+        """Only semantic controller params should remain trainable after freezing."""
+        from vggt_semantic import VGGTSemantic
+        from vggt_semantic.config import SemanticConfig, SemanticGuidanceConfig
+
+        model = VGGTSemantic(
+            img_size=_IMG_SIZE,
+            patch_size=_PATCH_SIZE,
+            embed_dim=_EMBED_DIM,
+            patch_embed="conv",
+            enable_camera=True,
+            enable_depth=True,
+            enable_point=False,
+            enable_track=False,
+            semantic=SemanticConfig(
+                enabled=True,
+                dim=32,
+                backbone="placeholder",
+                guidance=SemanticGuidanceConfig(enabled=True),
+            ),
+        )
+        model.freeze_base_and_enable_semantic_controller(train_sem_head=False)
+
+        trainable = {n for n, p in model.named_parameters() if p.requires_grad}
+        assert any(n.startswith("sem_tokenizer.proj.") for n in trainable)
+        assert any("sem_log_scale" in n for n in trainable)
+        assert not any(n.startswith("sem_head.") for n in trainable)
+        assert not any(n.startswith("camera_head.") for n in trainable)
+        assert not any(n.startswith("depth_head.") for n in trainable)
+
+    def test_semantic_controller_parameters_match_trainable_set(self):
+        """semantic_controller_parameters should expose exactly trainable params."""
+        from vggt_semantic import VGGTSemantic
+        from vggt_semantic.config import SemanticConfig, SemanticGuidanceConfig
+
+        model = VGGTSemantic(
+            img_size=_IMG_SIZE,
+            patch_size=_PATCH_SIZE,
+            embed_dim=_EMBED_DIM,
+            patch_embed="conv",
+            enable_camera=True,
+            enable_depth=True,
+            enable_point=False,
+            enable_track=False,
+            semantic=SemanticConfig(
+                enabled=True,
+                dim=32,
+                backbone="placeholder",
+                guidance=SemanticGuidanceConfig(enabled=True),
+            ),
+        )
+        model.freeze_base_and_enable_semantic_controller(train_sem_head=True)
+        expected = {id(p) for p in model.parameters() if p.requires_grad}
+        actual = {id(p) for p in model.semantic_controller_parameters(train_sem_head=True)}
+        assert expected == actual

@@ -206,6 +206,44 @@ optim_sem = torch.optim.Adam(model.semantic_parameters(), lr=1e-3)
 optim_geo = torch.optim.Adam(model.parameters(), lr=1e-4)
 ```
 
+### Minimal semantic-controller training loop (checkpoint-free start)
+
+When starting without a pretrained checkpoint, freeze all base-network weights and only train the semantic controller:
+
+```python
+model.freeze_base_and_enable_semantic_controller(train_sem_head=True)
+optimizer = torch.optim.AdamW(
+    [p for p in model.semantic_controller_parameters(train_sem_head=True) if p.requires_grad],
+    lr=1e-3,
+)
+```
+
+Included script: `train_semantic_controller.py`
+
+```bash
+python train_semantic_controller.py \
+  --data-root /path/to/dataset \
+  --epochs 30 \
+  --num-views 2 \
+  --img-size 224 \
+  --backbone placeholder \
+  --train-sem-head \
+  --distill-weight 0.1 \
+  --save-path checkpoints/semantic_controller.pt
+```
+
+Dataset layout expected by the script:
+
+```text
+data_root/
+  rgb/    frame_0001.png ...
+  depth/  frame_0001.png ...   # same filename stems as rgb, depth in millimeters by default
+```
+
+Loss used in the loop:
+1. Depth supervision (`L1`) on valid depth pixels.
+2. Optional feature distillation (`--distill-weight > 0`): relation-level distillation that matches token cosine-similarity structure between projected semantic tokens and frozen DINO features.
+
 ---
 
 ## Module 4 (future work)
