@@ -75,6 +75,7 @@ class VGGTSemanticConfig:
     img_size: int = 518
     patch_size: int = 14
     embed_dim: int = 1024
+    patch_embed: str = "dinov2_vitl14_reg"
     enable_camera: bool = True
     enable_point: bool = True
     enable_depth: bool = True

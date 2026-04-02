@@ -363,3 +363,30 @@ class TestVGGTSemantic:
         with torch.no_grad():
             out = model(tiny_images)
         assert "images" in out
+
+    def test_small_embed_with_conv_patch_embed(self):
+        """Regression: tiny embed_dim must work when patch_embed is conv."""
+        from vggt_semantic import VGGTSemantic
+        from vggt_semantic.config import SemanticConfig, SemanticGuidanceConfig
+
+        model = VGGTSemantic(
+            img_size=112,
+            patch_size=14,
+            embed_dim=64,
+            patch_embed="conv",
+            enable_camera=True,
+            enable_depth=True,
+            enable_point=False,
+            enable_track=False,
+            semantic=SemanticConfig(
+                enabled=True,
+                dim=32,
+                backbone="placeholder",
+                guidance=SemanticGuidanceConfig(enabled=True),
+            ),
+        ).eval()
+        imgs = torch.rand(1, 1, 3, 112, 112)
+        with torch.no_grad():
+            out = model(imgs)
+        assert "depth" in out
+        assert "sem_feat" in out

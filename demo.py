@@ -65,6 +65,7 @@ def _build_model(img_size: int, backbone: str):
         img_size=img_size,
         patch_size=14,
         embed_dim=64,          # tiny embed for fast CPU inference in demo
+        patch_embed="conv",    # keep patch token dim aligned with tiny embed_dim
         enable_camera=True,
         enable_depth=True,
         enable_point=False,
@@ -147,7 +148,10 @@ def _sem_pca_rgb(sem: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 
 def run_inference(
-    images_in: List[Optional[Image.Image]],
+    img_1: Optional[Image.Image],
+    img_2: Optional[Image.Image],
+    img_3: Optional[Image.Image],
+    img_4: Optional[Image.Image],
     img_size: int,
     backbone: str,
 ) -> List[Optional[Image.Image]]:
@@ -161,7 +165,8 @@ def run_inference(
     """
     MAX_VIEWS = 4
 
-    # Filter out None / empty slots
+    # Match Gradio's positional inputs: 4 image widgets + settings.
+    images_in: List[Optional[Image.Image]] = [img_1, img_2, img_3, img_4]
     valid: List[Image.Image] = [im for im in images_in if im is not None]
     if not valid:
         raise gr.Error("Please upload at least one image.")
@@ -285,7 +290,7 @@ click **Run Inference** to see:
             )
             img_size_sl = gr.Slider(
                 minimum=56,
-                maximum=336,
+                maximum=518,
                 step=14,
                 value=112,
                 label="Image size (pixels, snapped to multiple of 14)",

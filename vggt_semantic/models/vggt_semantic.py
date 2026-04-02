@@ -170,6 +170,7 @@ class VGGTSemantic(nn.Module):
         img_size: int = 518,
         patch_size: int = 14,
         embed_dim: int = 1024,
+        patch_embed: str = "dinov2_vitl14_reg",
         enable_camera: bool = True,
         enable_point: bool = True,
         enable_depth: bool = True,
@@ -193,6 +194,7 @@ class VGGTSemantic(nn.Module):
                 img_size=img_size,
                 patch_size=patch_size,
                 embed_dim=embed_dim,
+                patch_embed=patch_embed,
                 use_semantic_guidance=True,
                 sem_dim=semantic.dim,
             )
@@ -204,6 +206,7 @@ class VGGTSemantic(nn.Module):
                     img_size=img_size,
                     patch_size=patch_size,
                     embed_dim=embed_dim,
+                    patch_embed=patch_embed,
                 )
             except ImportError:
                 from vggt_semantic.modules.aggregator import SemanticGuidedAggregator
@@ -211,6 +214,7 @@ class VGGTSemantic(nn.Module):
                     img_size=img_size,
                     patch_size=patch_size,
                     embed_dim=embed_dim,
+                    patch_embed=patch_embed,
                     use_semantic_guidance=False,
                 )
 
@@ -349,6 +353,7 @@ class VGGTSemantic(nn.Module):
             img_size=cfg.img_size,
             patch_size=cfg.patch_size,
             embed_dim=cfg.embed_dim,
+            patch_embed=cfg.patch_embed,
             enable_camera=cfg.enable_camera,
             enable_point=cfg.enable_point,
             enable_depth=cfg.enable_depth,
