@@ -216,6 +216,8 @@ class SemanticTokenizer(nn.Module):
                 out_dim=_DINOV2_PATCH_DIM, patch_size=patch_size
             )
             _backbone_dim = _DINOV2_PATCH_DIM
+            for p in self.backbone.parameters():
+                p.requires_grad_(False)
         elif backbone == "dinov2":
             self.backbone, _backbone_dim = _build_dinov2_backbone(patch_size)
         else:

@@ -96,7 +96,7 @@ if not _GEO_HEADS_AVAILABLE:
     class _StubDPTHead(nn.Module):
         """Stub DPT head that returns zero feature maps."""
 
-        def __init__(self, dim_in: int, output_dim: int = 2) -> None:
+        def __init__(self, dim_in: int, output_dim: int = 2, **kwargs) -> None:
             super().__init__()
             self.output_dim = output_dim
             self.proj = nn.Linear(dim_in, output_dim + 1)  # +1 conf

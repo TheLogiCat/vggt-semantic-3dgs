@@ -21,3 +21,8 @@ safetensors
 
 # Development / testing
 pytest
+
+# Interactive visualization demo (demo.py)
+gradio>=4.0
+matplotlib>=3.7
+scikit-learn>=1.3
