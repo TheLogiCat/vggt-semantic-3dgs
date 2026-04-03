@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
-from typing import List, Tuple
 
 import numpy as np
 from PIL import Image
@@ -23,18 +22,6 @@ from torch.utils.data import DataLoader, Dataset
 
 from vggt_semantic import VGGTSemantic
 from vggt_semantic.config import SemanticConfig, SemanticGuidanceConfig
-
-
-def _load_rgb(path: Path, img_size: int) -> Tensor:
-    img = Image.open(path).convert("RGB").resize((img_size, img_size), Image.BILINEAR)
-    arr = np.asarray(img, dtype=np.float32) / 255.0
-    return torch.from_numpy(arr).permute(2, 0, 1)
-
-
-def _load_depth(path: Path, img_size: int, depth_scale: float) -> Tensor:
-    dep = Image.open(path).resize((img_size, img_size), Image.NEAREST)
-    arr = np.asarray(dep, dtype=np.float32) / depth_scale
-    return torch.from_numpy(arr)
 
 
 class MultiViewDataset(Dataset):
@@ -71,13 +58,6 @@ class MultiViewDataset(Dataset):
         return torch.stack(rgbs), torch.stack(depths)
 
 
-def _build_batch(item: Tuple[Tensor, Tensor], num_views: int, device: torch.device) -> Tuple[Tensor, Tensor]:
-    rgb, depth = item  # rgb [3,H,W], depth [H,W]
-    images = rgb.unsqueeze(0).repeat(num_views, 1, 1, 1).unsqueeze(0).to(device)   # [1,S,3,H,W]
-    depth_gt = depth.unsqueeze(0).repeat(num_views, 1, 1).unsqueeze(0).to(device)   # [1,S,H,W]
-    return images, depth_gt
-
-
 def _depth_loss(depth_pred: Tensor, depth_gt: Tensor) -> Tensor:
     if depth_pred.ndim == 5:
         depth_pred = depth_pred[..., 0]
@@ -89,10 +69,10 @@ def _depth_loss(depth_pred: Tensor, depth_gt: Tensor) -> Tensor:
 
 def _relation_distill_loss(model: VGGTSemantic, images: Tensor) -> Tensor:
     if model._last_T_sem is None or model.sem_tokenizer is None:
-        return torch.tensor(0.0, device=images.device)
+        return torch.tensor(0.0, device=images.device, dtype=images.dtype)
     sem = model._last_T_sem  # [B,S,N,32]
     B, S, N_patch, _ = sem.shape
-    imgs_flat = images.reshape(B * S, images.shape[2], images.shape[3], images.shape[4])
+    imgs_flat = images.reshape(B * S, *images.shape[2:])
     with torch.no_grad():
         teacher = model.sem_tokenizer.backbone(imgs_flat)[:, -N_patch:, :]  # [B*S,N,1024]
     sem_f = sem.reshape(B * S, N_patch, -1)
