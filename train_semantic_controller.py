@@ -37,39 +37,38 @@ def _load_depth(path: Path, img_size: int, depth_scale: float) -> Tensor:
     return torch.from_numpy(arr)
 
 
-class RGBDepthPairs(Dataset):
-    """
-    Expects:
-      root/
-        rgb/*.png|jpg
-        depth/*.png
-    with matching file stems between rgb and depth.
-    """
-
-    def __init__(self, root: Path, img_size: int, depth_scale: float = 1000.0) -> None:
-        self.root = root
+class MultiViewDataset(Dataset):
+    def __init__(self, root: str, num_views: int = 2, img_size: int = 224, depth_scale: float = 255.0):
+        self.root = Path(root)
+        self.num_views = num_views
         self.img_size = img_size
         self.depth_scale = depth_scale
-        rgb_dir = root / "rgb"
-        depth_dir = root / "depth"
-        if not rgb_dir.exists() or not depth_dir.exists():
-            raise FileNotFoundError(f"Missing {rgb_dir} or {depth_dir}")
-        self.pairs: List[Tuple[Path, Path]] = []
-        for p in sorted(rgb_dir.glob("*")):
-            if p.suffix.lower() not in {".png", ".jpg", ".jpeg"}:
-                continue
-            d = depth_dir / f"{p.stem}.png"
-            if d.exists():
-                self.pairs.append((p, d))
-        if not self.pairs:
-            raise RuntimeError("No rgb/depth pairs found.")
+        self.scenes = sorted([d for d in self.root.iterdir() if d.is_dir()])
+        if not self.scenes:
+            raise RuntimeError("未找到场景文件夹")
 
     def __len__(self) -> int:
-        return len(self.pairs)
+        return len(self.scenes)
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor]:
-        rgb_p, dep_p = self.pairs[idx]
-        return _load_rgb(rgb_p, self.img_size), _load_depth(dep_p, self.img_size, self.depth_scale)
+    def __getitem__(self, idx: int):
+        scene_path = self.scenes[idx]
+        rgbs, depths = [], []
+        
+        for v in range(self.num_views):
+            # RGB
+            rgb_p = scene_path / f"rgb_{v}.png"
+            img = Image.open(rgb_p).convert("RGB").resize((self.img_size, self.img_size), Image.BILINEAR)
+            arr = np.asarray(img, dtype=np.float32) / 255.0
+            rgbs.append(torch.from_numpy(arr).permute(2, 0, 1))
+
+            # Depth
+            dep_p = scene_path / f"depth_{v}.png"
+            dep = Image.open(dep_p).resize((self.img_size, self.img_size), Image.NEAREST)
+            dep_arr = np.asarray(dep, dtype=np.float32) / self.depth_scale
+            depths.append(torch.from_numpy(dep_arr))
+
+        # 直接输出形状正确的张量: [num_views, C, H, W]
+        return torch.stack(rgbs), torch.stack(depths)
 
 
 def _build_batch(item: Tuple[Tensor, Tensor], num_views: int, device: torch.device) -> Tuple[Tensor, Tensor]:
@@ -118,8 +117,8 @@ def main() -> None:
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    ds = RGBDepthPairs(args.data_root, img_size=args.img_size, depth_scale=args.depth_scale)
-    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, num_workers=0)
+    ds = MultiViewDataset(args.data_root, num_views=args.num_views, img_size=args.img_size, depth_scale=args.depth_scale)
+    dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True)
 
     model = VGGTSemantic(
         img_size=args.img_size,
@@ -140,23 +139,25 @@ def main() -> None:
     model.train()
     for epoch in range(args.epochs):
         running = 0.0
-        for rgb_batch, depth_batch in dl:
-            # Keep loop minimal and robust: operate sample-by-sample across batch items.
+        for rgb_batch, depth_batch in dl: # 直接接收规整的 Batch
             optimizer.zero_grad(set_to_none=True)
-            total_loss = torch.tensor(0.0, device=device)
-            for i in range(rgb_batch.shape[0]):
-                images, depth_gt = _build_batch((rgb_batch[i], depth_batch[i]), args.num_views, device)
-                out = model(images)
-                loss_depth = _depth_loss(out["depth"], depth_gt)
-                loss = loss_depth
-                if args.distill_weight > 0:
-                    loss_distill = _relation_distill_loss(model, images)
-                    loss = loss + args.distill_weight * loss_distill
-                total_loss = total_loss + loss
-            total_loss = total_loss / rgb_batch.shape[0]
-            total_loss.backward()
+            
+            # 张量形状已由 DataLoader 处理好
+            images = rgb_batch.to(device)
+            depth_gt = depth_batch.to(device)
+            
+            out = model(images)
+            loss_depth = _depth_loss(out["depth"], depth_gt)
+            
+            loss = loss_depth
+            if args.distill_weight > 0:
+                loss_distill = _relation_distill_loss(model, images)
+                loss = loss + args.distill_weight * loss_distill
+                
+            loss.backward()
             optimizer.step()
-            running += float(total_loss.detach().cpu())
+            running += float(loss.detach().cpu())
+            
         avg = running / max(1, len(dl))
         print(f"epoch={epoch + 1}/{args.epochs} loss={avg:.6f}")
 
